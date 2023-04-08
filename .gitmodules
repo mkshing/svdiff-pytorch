@@ -1,0 +1,3 @@
+[submodule "scripts/gradio"]
+	path = scripts/gradio
+	url = https://huggingface.co/spaces/svdiff-library/SVDiff-Training-UI

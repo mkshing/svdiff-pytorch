@@ -1,6 +1,6 @@
 # SVDiff-pytorch
-<a href="https://colab.research.google.com/github/mkshing/svdiff-pytorch/blob/main/scripts/svdiff_pytorch.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
-[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/svdiff-library/SVDiff-Training-UI)
+<a href="https://colab.research.google.com/github/mkshing/svdiff-pytorch/blob/main/scripts/svdiff_pytorch.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a> 
+[![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/raw/main/open-in-hf-spaces-sm.svg)](https://huggingface.co/spaces/svdiff-library/SVDiff-Training-UI)
 
 
 An implementation of [SVDiff: Compact Parameter Space for Diffusion Fine-Tuning](https://arxiv.org/abs/2303.11305) by using d🧨ffusers. 
@@ -87,6 +87,20 @@ python inference.py \
   --scheduler_type="dpm_solver++"  \
   --num_inference_steps=25  \
   --num_images_per_prompt=2 
+```
+
+## Gradio
+You can also try SVDiff-pytorch in a UI with [gradio](https://gradio.app/). This demo supports both training and inference!
+
+[![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/raw/main/open-in-hf-spaces-sm.svg)](https://huggingface.co/spaces/svdiff-library/SVDiff-Training-UI)
+
+If you want to run it locally, run the following commands step by step.
+```bash
+$ git clone --recursive https://github.com/mkshing/svdiff-pytorch.git
+$ cd scripts/gradio
+$ pip install -r requirements.txt 
+$ export HF_TOKEN="YOUR_HF_TOKEN_HERE"
+$ python app.py
 ```
 
 ## Additional Features
