@@ -24,6 +24,7 @@ Compared with LoRA, the number of trainable parameters is 0.5 M less parameters 
   ![chair-result](assets/chair-result.png)
   <br>"photo of a ~~pink~~ blue chair with black legs"
 
+
 ## Installation 
 ```
 $ pip install svdiff-pytorch
@@ -101,20 +102,6 @@ python inference.py \
   --num_images_per_prompt=2 
 ```
 
-### Gradio
-You can also try SVDiff-pytorch in a UI with [gradio](https://gradio.app/). This demo supports both training and inference!
-
-[![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/raw/main/open-in-hf-spaces-sm.svg)](https://huggingface.co/spaces/svdiff-library/SVDiff-Training-UI)
-
-If you want to run it locally, run the following commands step by step.
-```bash
-$ git clone --recursive https://github.com/mkshing/svdiff-pytorch.git
-$ cd scripts/gradio
-$ pip install -r requirements.txt 
-$ export HF_TOKEN="YOUR_HF_TOKEN_HERE"
-$ python app.py
-```
-
 ## Single Image Editing
 ### Training
 In Single Image Editing, your instance prompt should be just the description of your input image **without the identifier**.
@@ -179,6 +166,20 @@ inv_latents = pipe.invert(source_prompt, image=image, guidance_scale=1.0).latent
 image = pipe(target_prompt, latents=inv_latents).images[0]
 ```
 
+
+## Gradio
+You can also try SVDiff-pytorch in a UI with [gradio](https://gradio.app/). This demo supports both training and inference!
+
+[![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/raw/main/open-in-hf-spaces-sm.svg)](https://huggingface.co/spaces/svdiff-library/SVDiff-Training-UI)
+
+If you want to run it locally, run the following commands step by step.
+```bash
+$ git clone --recursive https://github.com/mkshing/svdiff-pytorch.git
+$ cd scripts/gradio
+$ pip install -r requirements.txt 
+$ export HF_TOKEN="YOUR_HF_TOKEN_HERE"
+$ python app.py
+```
 
 ## Additional Features
 
