@@ -18,8 +18,9 @@ Compared with LoRA, the number of trainable parameters is 0.5 M less parameters 
 
 ## Updates
 ### 2023.4.11
-- Released v0.2.0 (please see [here](https://github.com/mkshing/svdiff-pytorch/releases/tag/v0.2.0) for the details)
+- Released v0.2.0 (please see [here](https://github.com/mkshing/svdiff-pytorch/releases/tag/v0.2.0) for the details). By this change, you get better results with less training steps than the first release v0.1.1!!
 - Add [Single Image Editing](#single-image-editing)
+  <br>
   ![chair-result](assets/chair-result.png)
   <br>"photo of a ~~pink~~ blue chair with black legs"
 
