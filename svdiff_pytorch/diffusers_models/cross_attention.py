@@ -19,7 +19,7 @@ from torch import nn
 
 from diffusers.utils import deprecate, logging
 from diffusers.utils.import_utils import is_xformers_available
-from svdiff_pytorch.layers import SVDLinear
+from svdiff_pytorch.layers import SVDLinear, SVDGroupNorm, SVDLayerNorm
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -80,12 +80,12 @@ class CrossAttention(nn.Module):
         self.added_kv_proj_dim = added_kv_proj_dim
 
         if norm_num_groups is not None:
-            self.group_norm = nn.GroupNorm(num_channels=inner_dim, num_groups=norm_num_groups, eps=1e-5, affine=True)
+            self.group_norm = SVDGroupNorm(num_channels=inner_dim, num_groups=norm_num_groups, eps=1e-5, affine=True)
         else:
             self.group_norm = None
 
         if cross_attention_norm:
-            self.norm_cross = nn.LayerNorm(cross_attention_dim)
+            self.norm_cross = SVDLayerNorm(cross_attention_dim)
 
         self.to_q = SVDLinear(query_dim, inner_dim, bias=bias)
         self.to_k = SVDLinear(cross_attention_dim, inner_dim, bias=bias)
