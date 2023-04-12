@@ -18,18 +18,10 @@ Compared with LoRA, the number of trainable parameters is 0.5 M less parameters 
 
 ## Updates
 ### 2023.4.11
-- Released v0.2.0 (please see here for the details)
+- Released v0.2.0 (please see [here](https://github.com/mkshing/svdiff-pytorch/releases/tag/v0.2.0) for the details)
 - Add [Single Image Editing](#single-image-editing)
-
-Improved the following parts based on the author @phymhan's feedback! 
-- Train spectral shifts for 1-D weights such as LayerNorm too. (file size: 935kB (before: 923kB))
-- Using different learning rate for 1-D weights via `--learning_rate_1d`
-- Additionally, train spectral shifts of text encoder by `--train_text_encoder` (file size: 1.17MB)
-
-By this change, you get better results with less training steps than the first release v0.1.1!!
-
-"portrait of sks woman wearing kimono" where `sks` indicates Gal Gadot.
-![gal_gadot](assets/v2_gal_gadot.png)
+  ![chair-result](assets/chair-result.png)
+  <br>"photo of a ~~pink~~ blue chair with black legs"
 
 ## Installation 
 ```
@@ -250,6 +242,7 @@ And, add `--enable_tome_merging` to your training arguments!
 - [x] Training
 - [x] Inference
 - [x] Scaling spectral shifts
+- [x] Support Single Image Editing
 - [ ] Support multiple spectral shifts (Section 3.2)
 - [ ] Cut-Mix-Unmix (Section 3.3)
 - [ ] SVDiff + LoRA
