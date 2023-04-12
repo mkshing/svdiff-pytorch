@@ -73,7 +73,7 @@ inference: true
     """
     model_card = f"""
 # SVDiff-pytorch - {repo_id}
-These are SVDiff weights for {base_model}. The weights were trained on {prompt} using [DreamBooth](https://dreambooth.github.io/).
+These are SVDiff weights for {base_model}. The weights were trained on {prompt}.
 """
     with open(os.path.join(repo_folder, "README.md"), "w") as f:
         f.write(yaml + model_card)
