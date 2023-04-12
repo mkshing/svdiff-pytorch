@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from svdiff_pytorch.diffusers_models.attention import AdaGroupNorm
-from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear
+from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear, SVDGroupNorm, SVDLayerNorm
 
 
 class Upsample1D(nn.Module):
@@ -472,7 +472,7 @@ class ResnetBlock2D(nn.Module):
         if self.time_embedding_norm == "ada_group":
             self.norm1 = AdaGroupNorm(temb_channels, in_channels, groups, eps=eps)
         else:
-            self.norm1 = torch.nn.GroupNorm(num_groups=groups, num_channels=in_channels, eps=eps, affine=True)
+            self.norm1 = SVDGroupNorm(num_groups=groups, num_channels=in_channels, eps=eps, affine=True)
 
         self.conv1 = SVDConv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
 
@@ -491,7 +491,7 @@ class ResnetBlock2D(nn.Module):
         if self.time_embedding_norm == "ada_group":
             self.norm2 = AdaGroupNorm(temb_channels, out_channels, groups_out, eps=eps)
         else:
-            self.norm2 = torch.nn.GroupNorm(num_groups=groups_out, num_channels=out_channels, eps=eps, affine=True)
+            self.norm2 = SVDGroupNorm(num_groups=groups_out, num_channels=out_channels, eps=eps, affine=True)
 
         self.dropout = torch.nn.Dropout(dropout)
         conv_2d_out_channels = conv_2d_out_channels or out_channels
@@ -609,7 +609,7 @@ class Conv1dBlock(nn.Module):
         super().__init__()
 
         self.conv1d = SVDConv1d(inp_channels, out_channels, kernel_size, padding=kernel_size // 2)
-        self.group_norm = nn.GroupNorm(n_groups, out_channels)
+        self.group_norm = SVDGroupNorm(n_groups, out_channels)
         self.mish = nn.Mish()
 
     def forward(self, x):

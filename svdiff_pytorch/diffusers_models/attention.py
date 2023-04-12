@@ -21,7 +21,7 @@ from torch import nn
 from diffusers.utils.import_utils import is_xformers_available
 from svdiff_pytorch.diffusers_models.cross_attention import CrossAttention
 from diffusers.models.embeddings import CombinedTimestepLabelEmbeddings
-from svdiff_pytorch.layers import SVDLinear
+from svdiff_pytorch.layers import SVDLinear, SVDGroupNorm, SVDLayerNorm
 
 
 if is_xformers_available():
@@ -62,7 +62,7 @@ class AttentionBlock(nn.Module):
 
         self.num_heads = channels // num_head_channels if num_head_channels is not None else 1
         self.num_head_size = num_head_channels
-        self.group_norm = nn.GroupNorm(num_channels=channels, num_groups=norm_num_groups, eps=eps, affine=True)
+        self.group_norm = SVDGroupNorm(num_channels=channels, num_groups=norm_num_groups, eps=eps, affine=True)
 
         # define q,k,v as linear layers
         self.query = SVDLinear(channels, channels)
@@ -252,7 +252,7 @@ class BasicTransformerBlock(nn.Module):
         elif self.use_ada_layer_norm_zero:
             self.norm1 = AdaLayerNormZero(dim, num_embeds_ada_norm)
         else:
-            self.norm1 = nn.LayerNorm(dim, elementwise_affine=norm_elementwise_affine)
+            self.norm1 = SVDLayerNorm(dim, elementwise_affine=norm_elementwise_affine)
 
         if cross_attention_dim is not None:
             # We currently only use AdaLayerNormZero for self attention where there will only be one attention block.
@@ -261,13 +261,13 @@ class BasicTransformerBlock(nn.Module):
             self.norm2 = (
                 AdaLayerNorm(dim, num_embeds_ada_norm)
                 if self.use_ada_layer_norm
-                else nn.LayerNorm(dim, elementwise_affine=norm_elementwise_affine)
+                else SVDLayerNorm(dim, elementwise_affine=norm_elementwise_affine)
             )
         else:
             self.norm2 = None
 
         # 3. Feed-forward
-        self.norm3 = nn.LayerNorm(dim, elementwise_affine=norm_elementwise_affine)
+        self.norm3 = SVDLayerNorm(dim, elementwise_affine=norm_elementwise_affine)
 
     def forward(
         self,
@@ -453,7 +453,7 @@ class AdaLayerNorm(nn.Module):
         self.emb = nn.Embedding(num_embeddings, embedding_dim)
         self.silu = nn.SiLU()
         self.linear = SVDLinear(embedding_dim, embedding_dim * 2)
-        self.norm = nn.LayerNorm(embedding_dim, elementwise_affine=False)
+        self.norm = SVDLayerNorm(embedding_dim, elementwise_affine=False)
 
     def forward(self, x, timestep):
         emb = self.linear(self.silu(self.emb(timestep)))
@@ -474,7 +474,7 @@ class AdaLayerNormZero(nn.Module):
 
         self.silu = nn.SiLU()
         self.linear = SVDLinear(embedding_dim, 6 * embedding_dim, bias=True)
-        self.norm = nn.LayerNorm(embedding_dim, elementwise_affine=False, eps=1e-6)
+        self.norm = SVDLayerNorm(embedding_dim, elementwise_affine=False, eps=1e-6)
 
     def forward(self, x, timestep, class_labels, hidden_dtype=None):
         emb = self.linear(self.silu(self.emb(timestep, class_labels, hidden_dtype=hidden_dtype)))

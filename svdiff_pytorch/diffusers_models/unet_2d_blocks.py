@@ -22,7 +22,7 @@ from svdiff_pytorch.diffusers_models.cross_attention import CrossAttention, Cros
 from svdiff_pytorch.diffusers_models.dual_transformer_2d import DualTransformer2DModel
 from svdiff_pytorch.diffusers_models.resnet import Downsample2D, FirDownsample2D, FirUpsample2D, KDownsample2D, KUpsample2D, ResnetBlock2D, Upsample2D
 from svdiff_pytorch.diffusers_models.transformer_2d import Transformer2DModel
-from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear
+from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear, SVDLayerNorm, SVDGroupNorm
 
 
 def get_down_block(
@@ -2089,7 +2089,7 @@ class AttnSkipUpBlock2D(nn.Module):
                 kernel="fir",
             )
             self.skip_conv = SVDConv2d(out_channels, 3, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-            self.skip_norm = torch.nn.GroupNorm(
+            self.skip_norm = SVDGroupNorm(
                 num_groups=min(out_channels // 4, 32), num_channels=out_channels, eps=resnet_eps, affine=True
             )
             self.act = nn.SiLU()
@@ -2186,7 +2186,7 @@ class SkipUpBlock2D(nn.Module):
                 kernel="fir",
             )
             self.skip_conv = SVDConv2d(out_channels, 3, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
-            self.skip_norm = torch.nn.GroupNorm(
+            self.skip_norm = SVDGroupNorm(
                 num_groups=min(out_channels // 4, 32), num_channels=out_channels, eps=resnet_eps, affine=True
             )
             self.act = nn.SiLU()

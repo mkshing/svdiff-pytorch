@@ -7,6 +7,7 @@ import warnings
 from pathlib import Path
 from typing import Optional
 from packaging import version
+import itertools
 
 import numpy as np
 import torch
@@ -22,7 +23,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm.auto import tqdm
-from transformers import AutoTokenizer, PretrainedConfig
+from transformers import CLIPTextModel, AutoTokenizer, PretrainedConfig
 
 import diffusers
 from diffusers import __version__
@@ -33,7 +34,7 @@ from diffusers import (
     StableDiffusionPipeline,
     DPMSolverMultistepScheduler,
 )
-from svdiff_pytorch import load_unet_for_svdiff, SCHEDULER_MAPPING
+from svdiff_pytorch import load_unet_for_svdiff, load_text_encoder_for_svdiff, SCHEDULER_MAPPING
 from diffusers.loaders import AttnProcsLayers
 from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
@@ -76,26 +77,6 @@ These are SVDiff weights for {base_model}. The weights were trained on {prompt} 
 """
     with open(os.path.join(repo_folder, "README.md"), "w") as f:
         f.write(yaml + model_card)
-
-
-def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
-    text_encoder_config = PretrainedConfig.from_pretrained(
-        pretrained_model_name_or_path,
-        subfolder="text_encoder",
-        revision=revision,
-    )
-    model_class = text_encoder_config.architectures[0]
-
-    if model_class == "CLIPTextModel":
-        from transformers import CLIPTextModel
-
-        return CLIPTextModel
-    elif model_class == "RobertaSeriesModelWithTransformation":
-        from diffusers.pipelines.alt_diffusion.modeling_roberta_series import RobertaSeriesModelWithTransformation
-
-        return RobertaSeriesModelWithTransformation
-    else:
-        raise ValueError(f"{model_class} is not supported.")
 
 
 def parse_args(input_args=None):
@@ -271,8 +252,14 @@ def parse_args(input_args=None):
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=5e-4,
+        default=1e-3,
         help="Initial learning rate (after the potential warmup period) to use.",
+    )
+    parser.add_argument(
+        "--learning_rate_1d",
+        type=float,
+        default=1e-6,
+        help="Initial learning rate (after the potential warmup period) to use for 1-d weights",
     )
     parser.add_argument(
         "--scale_lr",
@@ -379,6 +366,11 @@ def parse_args(input_args=None):
     )
     parser.add_argument(
         "--enable_token_merging", action="store_true", help="Whether or not to use tomesd on prior generation"
+    )
+    parser.add_argument(
+        "--train_text_encoder",
+        action="store_true",
+        help="Whether to train spectral shifts of the text encoder. If set, the text encoder should be float32 precision.",
     )
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -594,6 +586,11 @@ def main(args):
     # Currently, it's not possible to do gradient accumulation when training two models with accelerate.accumulate
     # This will be enabled soon in accelerate. For now, we don't allow gradient accumulation when training two models.
     # TODO (patil-suraj): Remove this check when gradient accumulation with two models is enabled in accelerate.
+    if args.train_text_encoder and args.gradient_accumulation_steps > 1 and accelerator.num_processes > 1:
+        raise ValueError(
+            "Gradient accumulation is not supported when training the text encoder in distributed training. "
+            "Please set gradient_accumulation_steps to 1. This feature will be supported in the future."
+        )
     # Make one log on every process with the configuration for debugging.
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -700,14 +697,14 @@ def main(args):
             use_fast=False,
         )
 
-    # import correct text encoder class
-    text_encoder_cls = import_model_class_from_model_name_or_path(args.pretrained_model_name_or_path, args.revision)
-
     # Load scheduler and models
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
-    text_encoder = text_encoder_cls.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision
-    )
+    if args.train_text_encoder:
+        text_encoder = load_text_encoder_for_svdiff(args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision)
+    else:
+        text_encoder = CLIPTextModel.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision
+        )
     vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision)
     unet = load_unet_for_svdiff(args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, low_cpu_mem_usage=True)
 
@@ -716,25 +713,25 @@ def main(args):
     text_encoder.requires_grad_(False)
     unet.requires_grad_(False)
     optim_params = []
+    optim_params_1d = []
     for n, p in unet.named_parameters():
         if "delta" in n:
             p.requires_grad = True
-            optim_params.append(p)
+            if "norm" in n:
+                optim_params_1d.append(p)
+            else:
+                optim_params.append(p)
+    if args.train_text_encoder:
+        for n, p in text_encoder.named_parameters():
+            if "delta" in n:
+                p.requires_grad = True
+                if "norm" in n:
+                    optim_params_1d.append(p)
+                else:
+                    optim_params.append(p)
+        
     total_params = sum(p.numel() for p in optim_params)
     print(f"Number of Trainable Parameters: {total_params * 1.e-6:.2f} M")
-
-    # For mixed precision training we cast the text_encoder and vae weights to half-precision
-    # as these models are only used for inference, keeping weights in full precision is not required.
-    weight_dtype = torch.float32
-    if accelerator.mixed_precision == "fp16":
-        weight_dtype = torch.float16
-    elif accelerator.mixed_precision == "bf16":
-        weight_dtype = torch.bfloat16
-
-    # Move unet, vae and text_encoder to device and cast to weight_dtype
-    # unet.to(accelerator.device, dtype=weight_dtype)
-    vae.to(accelerator.device, dtype=weight_dtype)
-    text_encoder.to(accelerator.device, dtype=weight_dtype)
 
     if args.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
@@ -751,12 +748,26 @@ def main(args):
 
     if args.gradient_checkpointing:
         unet.enable_gradient_checkpointing()
+        if args.train_text_encoder:
+            text_encoder.gradient_checkpointing_enable()
 
-    if args.scale_lr:
-        args.learning_rate = (
-            args.learning_rate * args.gradient_accumulation_steps * args.train_batch_size * accelerator.num_processes
+    # Check that all trainable models are in full precision
+    low_precision_error_string = (
+        "Please make sure to always have all model weights in full float32 precision when starting training - even if"
+        " doing mixed precision training. copy of the weights should still be float32."
+    )
+    
+    if accelerator.unwrap_model(unet).dtype != torch.float32:
+        raise ValueError(
+            f"Unet loaded as datatype {accelerator.unwrap_model(unet).dtype}. {low_precision_error_string}"
         )
 
+    if args.train_text_encoder and accelerator.unwrap_model(text_encoder).dtype != torch.float32:
+        raise ValueError(
+            f"Text encoder loaded as datatype {accelerator.unwrap_model(text_encoder).dtype}."
+            f" {low_precision_error_string}"
+        )
+    
     # Enable TF32 for faster training on Ampere GPUs,
     # cf https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices
     if args.allow_tf32:
@@ -782,7 +793,7 @@ def main(args):
 
     # Optimizer creation
     optimizer = optimizer_class(
-        optim_params,
+        [{"params": optim_params}, {"params": optim_params_1d, "lr": args.learning_rate_1d}],
         lr=args.learning_rate,
         betas=(args.adam_beta1, args.adam_beta2),
         weight_decay=args.adam_weight_decay,
@@ -826,9 +837,29 @@ def main(args):
     )
 
     # Prepare everything with our `accelerator`.
-    unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-        unet, optimizer, train_dataloader, lr_scheduler
-    )
+    if args.train_text_encoder:
+        unet, text_encoder, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+            unet, text_encoder, optimizer, train_dataloader, lr_scheduler
+        )
+    else:
+        unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+            unet, optimizer, train_dataloader, lr_scheduler
+        )
+
+    # For mixed precision training we cast the text_encoder and vae weights to half-precision
+    # as these models are only used for inference, keeping weights in full precision is not required.
+    weight_dtype = torch.float32
+    if accelerator.mixed_precision == "fp16":
+        weight_dtype = torch.float16
+    elif accelerator.mixed_precision == "bf16":
+        weight_dtype = torch.bfloat16
+
+    # Move unet, vae and text_encoder to device and cast to weight_dtype
+    # unet.to(accelerator.device, dtype=weight_dtype)
+    vae.to(accelerator.device, dtype=weight_dtype)
+    if not args.train_text_encoder:
+        text_encoder.to(accelerator.device, dtype=weight_dtype)
+
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -842,14 +873,27 @@ def main(args):
     if accelerator.is_main_process:
         accelerator.init_trackers("svdiff-pytorch", config=vars(args))
 
-    def save_weights(step):
+    # cache keys to save
+    state_dict_keys = [k for k in accelerator.unwrap_model(unet).state_dict().keys() if "delta" in k]
+    if args.train_text_encoder:
+        state_dict_keys_te = [k for k in accelerator.unwrap_model(text_encoder).state_dict().keys() if "delta" in k]
+
+    def save_weights(step, save_path=None):
         # Create the pipeline using using the trained modules and save it.
         if accelerator.is_main_process:
-            save_path = os.path.join(args.output_dir, f"checkpoint-{step}")
+            if save_path is None:
+                save_path = os.path.join(args.output_dir, f"checkpoint-{step}")
             os.makedirs(save_path, exist_ok=True)
-            unet_model = accelerator.unwrap_model(unet, keep_fp32_wrapper=True)
-            state_dict = {k: v for k, v in unet_model.state_dict().items() if "delta" in k}
+            state_dict = accelerator.unwrap_model(unet, keep_fp32_wrapper=True).state_dict()
+            # state_dict = {k: v for k, v in unet_model.state_dict().items() if "delta" in k}
+            state_dict = {k: state_dict[k] for k in state_dict_keys}
             save_file(state_dict, os.path.join(save_path, "spectral_shifts.safetensors"))
+            if args.train_text_encoder:
+                state_dict = accelerator.unwrap_model(text_encoder, keep_fp32_wrapper=True).state_dict()
+                # state_dict = {k: v for k, v in unet_model.state_dict().items() if "delta" in k}
+                state_dict = {k: state_dict[k] for k in state_dict_keys_te}
+                save_file(state_dict, os.path.join(save_path, "spectral_shifts_te.safetensors"))
+
             print(f"[*] Weights saved at {save_path}")
 
     # Train!
@@ -897,6 +941,8 @@ def main(args):
 
     for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
+        if args.train_text_encoder:
+            text_encoder.train()
         for step, batch in enumerate(train_dataloader):
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
@@ -952,7 +998,11 @@ def main(args):
 
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
-                    params_to_clip = unet.parameters()
+                    params_to_clip = (
+                        itertools.chain(unet.parameters(), text_encoder.parameters())
+                        if args.train_text_encoder
+                        else unet.parameters()
+                    )
                     accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
                 optimizer.step()
                 lr_scheduler.step()
@@ -970,7 +1020,7 @@ def main(args):
                         # accelerator.save_state(save_path)
                         # logger.info(f"Saved state to {save_path}")
 
-            logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
+            logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0], "lr_1d": lr_scheduler.get_last_lr()[1]}
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
 
@@ -982,14 +1032,8 @@ def main(args):
                 log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight_dtype, epoch)
 
     accelerator.wait_for_everyone()
-    save_weights(global_step)
     # put the latest checkpoint to output-dir
-    save_path = args.output_dir
-    unet_model = accelerator.unwrap_model(unet, keep_fp32_wrapper=True)
-    state_dict = {k: v for k, v in unet_model.state_dict().items() if "delta" in k}
-    save_file(state_dict, os.path.join(save_path, "spectral_shifts.safetensors"))
-    print(f"[*] Weights saved at {save_path}")
-    
+    save_weights(global_step, save_path=args.output_dir)    
     if accelerator.is_main_process:
         if args.push_to_hub:
             save_model_card(

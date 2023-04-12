@@ -34,7 +34,7 @@ from svdiff_pytorch.diffusers_models.unet_2d_blocks import (
     get_down_block,
     get_up_block,
 )
-from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear
+from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear, SVDGroupNorm, SVDLayerNorm
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -348,7 +348,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
 
         # out
         if norm_num_groups is not None:
-            self.conv_norm_out = nn.GroupNorm(
+            self.conv_norm_out = SVDGroupNorm(
                 num_channels=block_out_channels[0], num_groups=norm_num_groups, eps=norm_eps
             )
             self.conv_act = nn.SiLU()

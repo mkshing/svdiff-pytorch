@@ -24,7 +24,7 @@ from diffusers.utils import BaseOutput, deprecate
 from svdiff_pytorch.diffusers_models.attention import BasicTransformerBlock
 from diffusers.models.embeddings import PatchEmbed
 from diffusers.models.modeling_utils import ModelMixin
-from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear
+from svdiff_pytorch.layers import SVDConv1d, SVDConv2d, SVDLinear, SVDGroupNorm, SVDLayerNorm
 
 
 @dataclass
@@ -143,7 +143,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
         if self.is_input_continuous:
             self.in_channels = in_channels
 
-            self.norm = torch.nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=1e-6, affine=True)
+            self.norm = SVDGroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=1e-6, affine=True)
             if use_linear_projection:
                 self.proj_in = SVDLinear(in_channels, inner_dim)
             else:
@@ -205,10 +205,10 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
             else:
                 self.proj_out = SVDConv2d(inner_dim, in_channels, kernel_size=1, stride=1, padding=0)
         elif self.is_input_vectorized:
-            self.norm_out = nn.LayerNorm(inner_dim)
+            self.norm_out = SVDLayerNorm(inner_dim)
             self.out = SVDLinear(inner_dim, self.num_vector_embeds - 1)
         elif self.is_input_patches:
-            self.norm_out = nn.LayerNorm(inner_dim, elementwise_affine=False, eps=1e-6)
+            self.norm_out = SVDLayerNorm(inner_dim, elementwise_affine=False, eps=1e-6)
             self.proj_out_1 = SVDLinear(inner_dim, 2 * inner_dim)
             self.proj_out_2 = SVDLinear(inner_dim, patch_size * patch_size * self.out_channels)
 

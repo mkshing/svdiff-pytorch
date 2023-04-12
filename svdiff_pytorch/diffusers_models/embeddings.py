@@ -137,7 +137,7 @@ class PatchEmbed(nn.Module):
             in_channels, embed_dim, kernel_size=(patch_size, patch_size), stride=patch_size, bias=bias
         )
         if layer_norm:
-            self.norm = nn.LayerNorm(embed_dim, elementwise_affine=False, eps=1e-6)
+            self.norm = SVDLayerNorm(embed_dim, elementwise_affine=False, eps=1e-6)
         else:
             self.norm = None
 
