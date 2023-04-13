@@ -22,7 +22,7 @@ Compared with LoRA, the number of trainable parameters is 0.5 M less parameters 
 - Add [Single Image Editing](#single-image-editing)
   <br>
   ![chair-result](assets/chair-result.png)
-  <br>"photo of a ~~pink~~ blue chair with black legs"
+  <br>"photo of a ~~pink~~ **blue** chair with black legs" (without DDIM Inversion) 
 
 
 ## Installation 
@@ -104,7 +104,7 @@ python inference.py \
 
 ## Single Image Editing
 ### Training
-In Single Image Editing, your instance prompt should be just the description of your input image **without the identifier**.
+In Single Image Editing, your instance prompt should be just the description of your input image **without the identifier**. 
 
 ```bash
 export MODEL_NAME="runwayml/stable-diffusion-v1-5"
@@ -117,33 +117,7 @@ accelerate launch train_svdiff.py \
   --instance_data_dir=$INSTANCE_DIR \
   --class_data_dir=$CLASS_DIR \
   --output_dir=$OUTPUT_DIR \
-  --with_prior_preservation --prior_loss_weight=1.0 \
   --instance_prompt="photo of a pink chair with black legs" \
-  --class_prompt="photo of a chair" \
-  --resolution=512 \
-  --train_batch_size=1 \
-  --gradient_accumulation_steps=1 \
-  --learning_rate=1e-3 \
-  --learning_rate_1d=1e-6 \
-  --train_text_encoder \
-  --lr_scheduler="constant" \
-  --lr_warmup_steps=0 \
-  --num_class_images=200 \
-  --max_train_steps=500
-```
-
-Training without prior preservation.
-```bash
-export MODEL_NAME="runwayml/stable-diffusion-v1-5"
-export INSTANCE_DIR="dir-path-to-input-image"
-export OUTPUT_DIR="path-to-save-model"
-
-accelerate launch train_svdiff.py \
-  --pretrained_model_name_or_path=$MODEL_NAME  \
-  --instance_data_dir=$INSTANCE_DIR \
-  --output_dir=$OUTPUT_DIR \
-  --prior_loss_weight=0 \
-  --instance_prompt="photo of a grey Beetle car" \
   --resolution=512 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
@@ -154,7 +128,6 @@ accelerate launch train_svdiff.py \
   --lr_warmup_steps=0 \
   --max_train_steps=500
 ```
-
 
 ### Inference
 
@@ -185,15 +158,17 @@ pipe.to("cuda")
 # if you don't do it, inv_latents = None
 image = Image.open(image).convert("RGB").resize((512, 512))
 # in SVDiff, they use guidance scale=1 in ddim inversion
-inv_latents = pipe.invert(source_prompt, image=image, guidance_scale=1.0).latents
+# They use target_prompt in DDIM inversion for better results. See below for comparison between source_prompt and target_prompt.
+inv_latents = pipe.invert(target_prompt, image=image, guidance_scale=1.0).latents
 
-image = pipe(target_prompt, latents=inv_latents, guidance_scale=3, eta=0.1).images[0]
+# They use a small cfg scale in Single Image Editing 
+image = pipe(target_prompt, latents=inv_latents, guidance_scale=3, eta=0.5).images[0]
 ```
 
-DDIM inversion with source prompt (left) v.s. target prompt (right):
+DDIM inversion with target prompt (left) v.s. source prompt (right):
 <br>
 ![car-result](assets/car-result.png)
-<br>"photo of a grey ~~Beetle~~ **Mustang** car"
+<br>"photo of a grey ~~Beetle~~ **Mustang** car" (original image: https://unsplash.com/photos/YEPDV3T8Vi8)
 
 To use slerp to add more stochasticity,
 ```python
