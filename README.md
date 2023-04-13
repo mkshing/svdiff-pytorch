@@ -132,6 +132,30 @@ accelerate launch train_svdiff.py \
   --max_train_steps=500
 ```
 
+Training without prior preservation.
+```bash
+export MODEL_NAME="runwayml/stable-diffusion-v1-5"
+export INSTANCE_DIR="dir-path-to-input-image"
+export OUTPUT_DIR="path-to-save-model"
+
+accelerate launch train_svdiff.py \
+  --pretrained_model_name_or_path=$MODEL_NAME  \
+  --instance_data_dir=$INSTANCE_DIR \
+  --output_dir=$OUTPUT_DIR \
+  --prior_loss_weight=0 \
+  --instance_prompt="photo of a grey Beetle car" \
+  --resolution=512 \
+  --train_batch_size=1 \
+  --gradient_accumulation_steps=1 \
+  --learning_rate=1e-3 \
+  --learning_rate_1d=1e-6 \
+  --train_text_encoder \
+  --lr_scheduler="constant" \
+  --lr_warmup_steps=0 \
+  --max_train_steps=500
+```
+
+
 ### Inference
 
 ```python
@@ -163,6 +187,22 @@ image = Image.open(image).convert("RGB").resize((512, 512))
 # in SVDiff, they use guidance scale=1 in ddim inversion
 inv_latents = pipe.invert(source_prompt, image=image, guidance_scale=1.0).latents
 
+image = pipe(target_prompt, latents=inv_latents, guidance_scale=3, eta=0.1).images[0]
+```
+
+DDIM inversion with source prompt (left) v.s. target prompt (right):
+<br>
+![car-result](assets/car-result.png)
+<br>"photo of a grey ~~Beetle~~ **Mustang** car"
+
+To use slerp to add more stochasticity,
+```python
+from svdiff_pytorch.utils import slerp_tensor
+
+# prev steps omitted
+inv_latents = pipe.invert(target_prompt, image=image, guidance_scale=1.0).latents
+noise_latents = pipe.prepare_latents(inv_latents.shape[0], inv_latents.shape[1], 512, 512, dtype=inv_latents.dtype, device=pipe.device, generator=torch.Generator("cuda").manual_seed(0))
+inv_latents =  slerp_tensor(0.5, inv_latents, noise_latents)
 image = pipe(target_prompt, latents=inv_latents).images[0]
 ```
 
