@@ -22,7 +22,7 @@ Compared with LoRA, the number of trainable parameters is 0.5 M less parameters 
 - Add [Single Image Editing](#single-image-editing)
   <br>
   ![chair-result](assets/chair-result.png)
-  <br>"photo of a ~~pink~~ blue chair with black legs"
+  <br>"photo of a ~~pink~~ **blue** chair with black legs" (without DDIM Inversion) 
 
 
 ## Installation 
@@ -104,7 +104,7 @@ python inference.py \
 
 ## Single Image Editing
 ### Training
-In Single Image Editing, your instance prompt should be just the description of your input image **without the identifier**.
+In Single Image Editing, your instance prompt should be just the description of your input image **without the identifier**. 
 
 ```bash
 export MODEL_NAME="runwayml/stable-diffusion-v1-5"
@@ -117,9 +117,7 @@ accelerate launch train_svdiff.py \
   --instance_data_dir=$INSTANCE_DIR \
   --class_data_dir=$CLASS_DIR \
   --output_dir=$OUTPUT_DIR \
-  --with_prior_preservation --prior_loss_weight=1.0 \
   --instance_prompt="photo of a pink chair with black legs" \
-  --class_prompt="photo of a chair" \
   --resolution=512 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
@@ -128,7 +126,6 @@ accelerate launch train_svdiff.py \
   --train_text_encoder \
   --lr_scheduler="constant" \
   --lr_warmup_steps=0 \
-  --num_class_images=200 \
   --max_train_steps=500
 ```
 
@@ -161,8 +158,26 @@ pipe.to("cuda")
 # if you don't do it, inv_latents = None
 image = Image.open(image).convert("RGB").resize((512, 512))
 # in SVDiff, they use guidance scale=1 in ddim inversion
-inv_latents = pipe.invert(source_prompt, image=image, guidance_scale=1.0).latents
+# They use target_prompt in DDIM inversion for better results. See below for comparison between source_prompt and target_prompt.
+inv_latents = pipe.invert(target_prompt, image=image, guidance_scale=1.0).latents
 
+# They use a small cfg scale in Single Image Editing 
+image = pipe(target_prompt, latents=inv_latents, guidance_scale=3, eta=0.5).images[0]
+```
+
+DDIM inversion with target prompt (left) v.s. source prompt (right):
+<br>
+![car-result](assets/car-result.png)
+<br>"photo of a grey ~~Beetle~~ **Mustang** car" (original image: https://unsplash.com/photos/YEPDV3T8Vi8)
+
+To use slerp to add more stochasticity,
+```python
+from svdiff_pytorch.utils import slerp_tensor
+
+# prev steps omitted
+inv_latents = pipe.invert(target_prompt, image=image, guidance_scale=1.0).latents
+noise_latents = pipe.prepare_latents(inv_latents.shape[0], inv_latents.shape[1], 512, 512, dtype=inv_latents.dtype, device=pipe.device, generator=torch.Generator("cuda").manual_seed(0))
+inv_latents =  slerp_tensor(0.5, inv_latents, noise_latents)
 image = pipe(target_prompt, latents=inv_latents).images[0]
 ```
 
