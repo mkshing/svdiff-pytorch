@@ -70,7 +70,7 @@ accelerate launch train_svdiff.py \
 ### Inference
 
 ```python
-from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
 import torch
 
 from svdiff_pytorch import load_unet_for_svdiff, load_text_encoder_for_svdiff
